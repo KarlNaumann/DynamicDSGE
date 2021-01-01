@@ -1,3 +1,11 @@
+"""
+Functions for the calculation of the simulations to be run
+"""
+
+__author__ = "Karl Naumann & Federico Morelli"
+__version__ = "0.1.0"
+__license__ = "MIT"
+
 import numpy as np
 import pandas as pd
 
@@ -111,6 +119,7 @@ def hh_feedback(x: float, x0: float, xmin: float = 0, xmax: float = 0.7,
     -------
     g   :   float
     """
+    #TODO Check if functional form still makes sense
     return 1 - 0.5 * (np.tanh(a * (x - x0)) * (xmax - xmin) + xmax + xmin)
 
 
@@ -178,6 +187,7 @@ def step(t: float, x: np.ndarray, p: dict):
 
     # Income and Investment
     income = wage_ * labour_ + bond_ / (1 + p['inflation'])
+    #TODO Update the feedback to be a function of the news
     feedback = hh_feedback(k_, p['k0'], p['xmin'], p['xmax'], p['theta'])
     ks = ks_ + income * (1 - feedback)
 
