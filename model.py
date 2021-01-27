@@ -8,81 +8,98 @@ __license__ = "MIT"
 
 import numpy as np
 import pandas as pd
+from matplotlib import pyplot as plt
+
+# GRAPHING FUNCTIONS
 
 
-def lhs(cons: float, x0: float) -> float:
-    """ Left-hand side of the household optimality condition that determines
-    consumption
+def timeseries(ax, data, log: bool = True, title: str = ''):
+    """ Function to graph a timeseries on a given axis
 
     Parameters
+    ----------
+    ax  :   matplotlib axes
+    data  :   pd.DataFrame
+    log     :   bool
+    title   :   str
+    """
+    assert isinstance(data, pd.DataFrame), "Graph dataframe only"
+
+    for c in data.columns:
+        ax.plot(data.loc[:, c], label=c)
+    if data.shape[1] > 1:
+        ax.legend()
+    try:
+        t = ' '.join(data.columns)
+    except AttributeError:
+        t = ''
+
+    if log:
+        ax.set_yscale('log')
+        t = 'log ' + t
+    if title == '':
+        ax.set_title(t)
+    else:
+        ax.set_title(title)
+
+
+def simulation_graph(groups: dict):
+    """ Plot the given time series in groups
+
+    Parameters
+    ----------
+    groups  :   dict
+
+    Returns
+    --------
+    axs     :   dict
+    """
+    fig, ax = plt.subplots(ncols=1, nrows=len(list(groups.keys())))
+    axs = {}
+    for i, k in enumerate(groups.keys()):
+        timeseries(ax[i], *groups[k], k)
+        axs[k] = ax[i]
+    plt.tight_layout()
+    plt.show(block=False)
+
+
+# SIMULATION FUNCTIONS
+
+
+def bisection_generalCB(z: float, income: float, k: float, gt_: float,
+                        ft_: float, p: dict, err: float = 1e-5) -> float:
+    """ Bi-section method for the general Cobb-Douglas production function
+
+    Parameters
+    ----------
+    z   :    float
+    income  :   float
+    k   :   float
+    gt_     :   float
+    ft_     :   float
+    p   :   dict
+    err     :   float (default 1e-5)
+
+    Returns
     ----------
     cons    :   float
-        Consumption level
-    x0  :   float
-        Product 2 * z^2 * k
-
-    Returns
-    -------
-    lhs     :   float
     """
-    return (cons ** 2 / x0) ** 2
+    def lhs(c: float, z: float, k: float, a: float, g: float = 1,
+            r: float = 0) -> float:
+        pt1 = 2 * g * (1+r) / (1 - a)
+        pt2 = (c / (z * k**a)) ** (2 / (1-a))
+        return pt1 * pt2
 
+    def rhs(cons: float, gti: float, ft: float) -> float:
+        return 1 - (ft * cons) / (gti - cons)
 
-def rhs(cons: float, gt: float, gamma: float = 1, r: float = 0) -> float:
-    """ Right-hand side of the household optimality condition that determines
-    consumption
-
-    Parameters
-    ----------
-    cons    :   float
-        consumption level
-    gt  :   float
-        effective income G * I
-    gamma   :   float
-        disutility of labour
-    r     :   float
-        interest rate
-
-    Returns
-    -------
-    rhs     :   float
-
-    """
-
-    # Old version: return (2 + gt / (cons - gt)) / (gamma * (1+r))
-
-    return 1 / (1 + r) - cons / ((gt - cons) * gamma)
-
-
-def bisection(x0: float, gt: float, gamma: float, r: float = 0,
-              err: float = 1e-2) -> float:
-    """ Numerical solution to the Households optimisation problem by means of
-    a bisection method. Solution is guaranteed to exist.
-
-    Parameters
-    ----------
-    x0  :   float
-        Product 2 * z^2 * k
-    gt  :   float
-        effective income G * I
-    gamma   :   float
-        disutility of labour
-    r     :   float
-        interest rate
-    err :   float
-        precision to the optimal solution
-
-    Returns
-    -------
-    cons   :   float
-        household optimal consumption level
-    """
-
-    # Define the left and right hand sides of the equations
-    diff = lambda a: rhs(a, gt, gamma, r) - lhs(a, x0)
+    def diff(c: float) -> float:
+        lhs_args = [c, z, k, p['alpha'], p['gamma'], p['interest']]
+        rhs(c, gt_ * income, ft_) - lhs(*lhs_args)
 
     # Initial guess at the next options for
-    x = [0, gt / 4, gt / 2]
+    max_val = gt_ * income / (1+ft_)
+    x = [0, max_val / 2, max_val]
     abs_lst = [abs(diff(i)) for i in x[:2]]
 
     while min(abs_lst) >= err:
@@ -98,111 +115,135 @@ def bisection(x0: float, gt: float, gamma: float, r: float = 0,
     return x[np.argmin(abs_lst)]
 
 
-def hh_feedback(x: float, x0: float, xmin: float = 0, xmax: float = 0.7,
-                a: float = 10):
-    """ Household feedback function G, to determine what proportion of their
-    income to invest as capital supply
+def bisection_CES(z: float, income: float, k: float, gt_: float, ft_: float,
+                  p: dict, err: float = 1e-5) -> float:
+    """ Bi-section method for the CES production function
 
     Parameters
     ----------
-    x   :   float
-    x0  :   float
-        Inflection level
-    xmin    :   float
-        Minimal savings rate
-    xmax    :   float
-        Maximal savings rate
-    a   :   float
-        Tanh multiplier
+    z   :    float
+    income  :   float
+    k   :   float
+    gt_     :   float
+    ft_     :   float
+    p   :   dict
+    err     :   float (default 1e-5)
 
     Returns
-    -------
-    g   :   float
+    ----------
+    cons    :   float
     """
-    #TODO Check if functional form still makes sense
-    return 1 - 0.5 * (np.tanh(a * (x - x0)) * (xmax - xmin) + xmax + xmin)
+
+    def lhs(cons: float, z: float, k: float, alpha: float, gamma: float,
+            r: float, rho: float) -> float:
+        pt1 = 2 * gamma * (1+r) / ((z ** 2) * (1 - alpha) ** (2 / rho))
+        pt2 = cons ** 2
+        pt3 = (1 - alpha*(z * k / cons) ** rho) ** ((2 - rho) / rho)
+        return pt1 * pt2 * pt3
+
+    def rhs(cons: float, gti: float, ft: float) -> float:
+        return 1 - (ft * cons) / (gti - cons)
+
+    def diff(c: float) -> float:
+        lhs_args = [c, z, k, p['alpha'], p['gamma'], p['interest'], p['rho']]
+        rhs(c, gt_ * income, ft_) - lhs(*lhs_args)
+
+    # Initial guess at the next options
+    guess = np.min([gt_*income, k * z * (1 / p['alpha']) ** (-1 / p['rho'])])
+    x = [0, guess / 2, guess]
+    abs_lst = [abs(diff(i)) for i in x[:2]]
+
+    # Apply bi-section method
+    while min(abs_lst) >= err:
+        test = np.sign([diff(i) for i in x])
+
+        if test[0] == test[1]:
+            x = [x[1], (x[1] + x[2]) / 2, x[2]]
+        elif test[1] == test[2]:
+            x = [x[0], (x[0] + x[1]) / 2, x[1]]
+
+        abs_lst = [abs(diff(i)) for i in x[:2]]
+
+    return x[np.argmin(abs_lst)]
 
 
-def firm_expectation():
-    return 0
+def step(t: float, x_: np.ndarray, p: dict):
+    """ Iterate through one step of the economy
+
+    Parameters
+    ----------
+    t   :   float
+    x_  :   np.ndarray
+    p   :   dict
+
+    Returns
+    ----------
+    x   :   np.ndarray
+    """
+    # Starting variables
+    z_, c_, n_, b_, w_, k_, q_, gt_, ft_, news_, inc_, xiz_, xin_ = x_
+
+    # Random technology process
+    rand = np.random.normal(0, p['sigmaZ'])
+    xiz = p['etaZ'] * xiz_ + np.sqrt(1 - p['etaZ'] ** 2) * rand
+    z = p['zbar'] * np.exp(xiz)
+
+    # Income and Investment
+    income = (w_ * n_ + b_ + q_ * k_) / (1 + p['inflation'])
+
+    # Capital Markets
+    k = (1 - p['depreciation']) * k_ + income * (1 - gt_)
+
+    # Household decision
+    c = bisection_CES(z, income, k, gt_, ft_, p)
+    n = (c ** 2) / (4 * k * (z ** 2))
+    b = (gt_ * income - c) * (1 + p['interest'])
+
+    # Firm decisions (CES)
+    temp = (p['alpha'] * k ** p['rho'] + (1 - p['alpha']) * n ** p['rho'])
+    temp = temp ** ((1 / p['rho']) - 1)
+    w = (1 - p['alpha']) * z * temp * (n ** (p['rho'] - 1))
+    q = p['alpha'] * z * temp * (k ** (p['rho'] - 1))
+
+    # News
+    xin = np.random.normal(0, p['sigmaN'])
+    info = p['n_cons']*(c/c_ - 1)
+    temp = p['n_persistence'] * news_ + (1 - p['n_persistence']) * info + xin
+    news = np.tanh(p['n_theta'] * temp)
+
+    if t > 300 and t < 400:
+        if p['shock'] == -1:
+            news = -1
+        elif p['shock'] == 1:
+            news = 1
+
+    # Household modifiers
+    gt = 0.5 * (p['g_max'] + p['g_min'] - news * (p['g_max'] - p['g_min']))
+    ft = 0.5 * (p['f_max'] + p['f_min'] - news * (p['f_max'] - p['f_min']))
+
+    return z, c, n, b, w, k, q, gt, ft, news, income, xiz, xin
 
 
 def simulate(start: np.ndarray, p: dict, t_end: float = 1e3):
-    """ Simulate a timeseries of the model realisations
+    """ Function to simulate the economy
 
     Parameters
     ----------
     start   :   np.ndarray
-        starting values in the order
-        z, k, ks, kd, s, cons, labour, bond, feedback, wage, xi
     p   :   dict
-        dictionary of float values for the parameters that should include
-        etaZ, sigmaZ, zbar, inflation, interest, k0, xmin, xmax, theta, c1, c2,
-        depreciation, gamma
-    t   :   float
-        total time of the simulation
+    t_end   :   float (default 1e3)
 
     Returns
-    -------
+    ----------
     df  :   pd.DataFrame
-        Timeseries of the individual variables in the model
     """
-
     x = np.empty((int(t_end), len(start)))
     x[0, :] = start
     for t in range(1, int(t_end)):
-        x[t, :] = step(t, x[t-1, :], p)
-
-    vars = ['technology', 'capital', 'ks', 'kd', 'sentiment', 'consumption',
-            'labour', 'bond', 'feedback', 'wage', 'xi']
-    return pd.DataFrame(x, columns=vars)
-
-
-def step(t: float, x: np.ndarray, p: dict):
-    """ Calculation of one time-step for the whole model
-
-    Parameters
-    ----------
-    t   :   float
-        current time (unused)
-    x   :   np.ndarray
-        np.ndarray of prior (t-1) realisations in the order
-        z, k, cons, labour, bond, ks_dot, kd_dot, feedback, wage, xi
-    p   :   dict
-        dict of the parameters that are used
-
-    Returns
-    -------
-    x_new   :   np.ndarray
-        new realisation in order
-        z, k, cons, labour, bond, ks_dot, kd_dot, feedback, wage, xi
-    """
-    #
-    z_, k_, ks_, kd_, s_, cons_, labour_, bond_, feedback_, wage_, xi_ = x
-
-    # Random technology process
-    rand = np.random.normal(0, p['sigmaZ'])
-    xi = p['etaZ'] * xi_ + np.sqrt(1 - p['etaZ'] ** 2) * rand
-    z = p['zbar'] * np.exp(xi)
-
-    # Income and Investment
-    income = wage_ * labour_ + bond_ / (1 + p['inflation'])
-    #TODO Update the feedback to be a function of the news
-    feedback = hh_feedback(k_, p['k0'], p['xmin'], p['xmax'], p['theta'])
-    ks = ks_ + income * (1 - feedback)
-
-    # Capital Markets
-    s_dot = firm_expectation()
-    kd = kd_ + p['c1'] * s_dot + p['c2'] * (s_ + s_dot)
-
-    k = min([kd, ks]) - p['depreciation'] * k_
-
-    x0 = z * np.sqrt(2 * k)
-
-    # Household decision variables
-    cons = bisection(x0, feedback * income, p['gamma'], p['interest'])
-    labour = (cons ** 2) / (4 * k * (z ** 2))
-    wage = 0.5 * cons / labour
-    bond = (feedback * income - cons) * (1 + p['interest'])
-
-    return z, k, ks, kd, s_ + s_dot, cons, labour, bond, feedback, wage, xi
+        x[t, :] = step(t, x[t - 1, :], p)
+    cols = ['z', 'c', 'n', 'b', 'w', 'k', 'q', 'gt',
+            'ft', 'news', 'income', 'xiz', 'xin']
+    df = pd.DataFrame(x, columns=cols)
+    df.loc[:, 'inv'] = 100*(1-df.loc[:, 'gt'])
+    df.loc[:, 'bc'] = df.b / df.c
+    return df
