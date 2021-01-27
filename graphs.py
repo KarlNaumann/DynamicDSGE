@@ -4,7 +4,6 @@ from cycler import cycler
 from matplotlib import rc
 from matplotlib.cm import get_cmap
 
-
 def page_width():
     return 5.95114
 
@@ -23,21 +22,20 @@ def plot_settings(cycles: bool = True):
 
     # Font sizes
     base = 12
-    rc('axes', titlesize=base)
-    rc('legend', fontsize=base - 2)
-    rc('axes', labelsize=base - 2)
+    rc('axes', titlesize=base-2)
+    rc('legend', fontsize=base-2)
+    rc('axes', labelsize=base-2)
+    rc('xtick', labelsize=base-3)
+    rc('ytick', labelsize=base-3)
 
     # Axis styles
-    cmap = get_cmap('tab10')
-    cycles = cycler('color', cmap([0.05, 0.15, 0.25, 0.35]))
-    if cycles:
-        cycles += cycler('linestyle', ['-', '--', ':', '-.'])
-    else:
-        cycles += cycler('linestyle', 4 * ['-'])
+    cycles = cycler('linestyle', ['-', '--', ':', '-.'])
+    cmap = get_cmap('gray')
+    cycles += cycler('color', cmap(list(np.linspace(0.1,0.9,4))))
     rc('axes', prop_cycle=cycles)
 
 
-def time_series_plot(data, ax, xtxt: str = '', ytxt: str = ''):
+def timeseries(df:pd.DataFrame, ax, xtxt: str='', ytxt:str=''):
     """ Generate a timeseries graph on the axes for each column in the
     given dataframe
 
@@ -50,7 +48,6 @@ def time_series_plot(data, ax, xtxt: str = '', ytxt: str = ''):
     ----------
     ax  :   matplotlib axes object
     """
-
     if isinstance(data, pd.DataFrame):
         for series in data.columns:
             ax.plot(data.loc[:, series], label=series)
@@ -61,32 +58,19 @@ def time_series_plot(data, ax, xtxt: str = '', ytxt: str = ''):
         ax.plot(data, label=data.name)
     else:
         raise TypeError
-
-    if xtxt == '':
-        try:
-            ax.set_xlabel(' '.join(data.index.names))
-        except KeyError:
-            try:
-                ax.set_xlabel(data.index.name)
-            except KeyError:
-                pass
-    else:
-        ax.set_xlabel(xtxt)
-
+    
+    ax.set_xlabel(xtxt)
     ax.set_ylabel(ytxt)
 
     ax.set_xlim(data.index[0], data.index[-1])
+    
     try:
         ax.ticklabel_format(axis='x', style='sci', scilimits=(-2, 4))
     except AttributeError:
         pass
-    # ax.minorticks_on()
-
-    return ax
 
 
-def histogram(series: pd.Series, ax, win: bool = True, bins: int = 20,
-              xtxt: str = '', ytxt: str = 'Proportion'):
+def histogram(x, ax, bins: int = 20, xtxt: str = '', ytxt: str = 'Proportion'):
     """ Function to generically plot a histogram
 
     Parameters
@@ -98,9 +82,21 @@ def histogram(series: pd.Series, ax, win: bool = True, bins: int = 20,
     ytxt    :   str
     """
 
-    n, bins = np.histogram(series, bins=bins)
-    n = n / series.shape[0]
+    n, bins = np.histogram(x, bins=bins)
+    n = n / x.shape[0]
 
-    ax.hist(bins[:-1], bins, weights=n)
+    ax.hist(bins[:-1], bins, weights=n, edgecolor='black')
     ax.set_xlabel(xtxt)
-    ax.set_ylabel(ytxt)
+    ax.set_ylabel('Proportion')
+
+    if info:
+        textstr = '\n'.join([
+            r'mean ${:.2f}$'.format(np.mean(x)),
+            r'median ${:.2f}$'.format(np.median(x)),
+            r'std. ${:.2f}$'.format(np.std(x))])
+        props = dict(boxstyle='round', facecolor='white', alpha=0.5)
+        ax.text(0.8, 0.8, textstr, transform=ax.transAxes, 
+                verticalalignment='top', bbox=props, fontsize=10)
+
+
+def
