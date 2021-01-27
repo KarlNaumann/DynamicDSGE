@@ -23,7 +23,8 @@ def timeseries(ax, data, log: bool = True, title: str = ''):
     log     :   bool
     title   :   str
     """
-    assert isinstance(data, pd.DataFrame), "Graph dataframe only"
+    if isinstance(data, pd.Series):
+        data = pd.DataFrame(data)
 
     for c in data.columns:
         ax.plot(data.loc[:, c], label=c)
@@ -43,7 +44,7 @@ def timeseries(ax, data, log: bool = True, title: str = ''):
         ax.set_title(title)
 
 
-def simulation_graph(groups: dict):
+def simulation_graph(groups: dict, size: tuple = (3, 10)):
     """ Plot the given time series in groups
 
     Parameters
@@ -55,12 +56,14 @@ def simulation_graph(groups: dict):
     axs     :   dict
     """
     fig, ax = plt.subplots(ncols=1, nrows=len(list(groups.keys())))
+    fig.set_size_inches(size)
     axs = {}
     for i, k in enumerate(groups.keys()):
         timeseries(ax[i], *groups[k], k)
         axs[k] = ax[i]
     plt.tight_layout()
     plt.show(block=False)
+    return axs
 
 
 # SIMULATION FUNCTIONS
