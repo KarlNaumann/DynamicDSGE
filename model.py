@@ -10,6 +10,59 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 
+# GRAPHING FUNCTIONS
+
+
+def timeseries(ax, data, log: bool = True, title: str = ''):
+    """ Function to graph a timeseries on a given axis
+    Parameters
+    ----------
+    ax  :   matplotlib axes
+    data  :   pd.DataFrame
+    log     :   bool
+    title   :   str
+    """
+    if isinstance(data, pd.Series):
+        data = pd.DataFrame(data)
+
+    for c in data.columns:
+        ax.plot(data.loc[:, c], label=c)
+    if data.shape[1] > 1:
+        ax.legend()
+    try:
+        t = ' '.join(data.columns)
+    except AttributeError:
+        t = ''
+
+    if log:
+        ax.set_yscale('log')
+        t = 'log ' + t
+    if title == '':
+        ax.set_title(t)
+    else:
+        ax.set_title(title)
+
+
+def simulation_graph(groups: dict, size: tuple = (3, 10)):
+    """ Plot the given time series in groups
+    Parameters
+    ----------
+    groups  :   dict
+    Returns
+    --------
+    axs     :   dict
+    """
+    fig, ax = plt.subplots(ncols=1, nrows=len(list(groups.keys())))
+    fig.set_size_inches(size)
+    axs = {}
+    for i, k in enumerate(groups.keys()):
+        timeseries(ax[i], *groups[k], k)
+        axs[k] = ax[i]
+    plt.tight_layout()
+    plt.show(block=False)
+    return axs
+
+
 # SIMULATION FUNCTIONS
 
 
