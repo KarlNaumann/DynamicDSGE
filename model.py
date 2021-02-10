@@ -10,243 +10,149 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 
-# GRAPHING FUNCTIONS
-
-
-def timeseries(ax, data, log: bool = True, title: str = ''):
-    """ Function to graph a timeseries on a given axis
-
-    Parameters
-    ----------
-    ax  :   matplotlib axes
-    data  :   pd.DataFrame
-    log     :   bool
-    title   :   str
-    """
-    if isinstance(data, pd.Series):
-        data = pd.DataFrame(data)
-
-    for c in data.columns:
-        ax.plot(data.loc[:, c], label=c)
-    if data.shape[1] > 1:
-        ax.legend()
-    try:
-        t = ' '.join(data.columns)
-    except AttributeError:
-        t = ''
-
-    if log:
-        ax.set_yscale('log')
-        t = 'log ' + t
-    if title == '':
-        ax.set_title(t)
-    else:
-        ax.set_title(title)
-
-
-def simulation_graph(groups: dict, size: tuple = (3, 10)):
-    """ Plot the given time series in groups
-
-    Parameters
-    ----------
-    groups  :   dict
-
-    Returns
-    --------
-    axs     :   dict
-    """
-    fig, ax = plt.subplots(ncols=1, nrows=len(list(groups.keys())))
-    fig.set_size_inches(size)
-    axs = {}
-    for i, k in enumerate(groups.keys()):
-        timeseries(ax[i], *groups[k], k)
-        axs[k] = ax[i]
-    plt.tight_layout()
-    plt.show(block=False)
-    return axs
-
-
 # SIMULATION FUNCTIONS
 
-
-def bisection_generalCB(z: float, income: float, k: float, gt_: float,
-                        ft_: float, p: dict, err: float = 1e-5) -> float:
-    """ Bi-section method for the general Cobb-Douglas production function
-
+def bound(z: float, gti: float, k: float, p:dict):
+    """Upper bound on the amount that can be consumed
+    
+    .. math:: c_t \leq z_t\cdotk_t\cdot\alpha^{-\frac{1}{\mu}}
+    
+    
     Parameters
     ----------
-    z   :    float
-    income  :   float
-    k   :   float
-    gt_     :   float
-    ft_     :   float
-    p   :   dict
-    err     :   float (default 1e-5)
-
+    z : float
+        Level of productivity
+    k : float
+        Level of capital at t
+    p : dict
+        Parameters from simulation
+        
     Returns
-    ----------
-    cons    :   float
+    -------
+    bound : float
+        Upper bound on consumption
     """
-    def lhs(c: float, z: float, k: float, a: float, g: float = 1,
-            r: float = 0) -> float:
-        pt1 = 2 * g * (1+r) / (1 - a)
-        pt2 = (c / (z * k**a)) ** (2 / (1-a))
-        return pt1 * pt2
+    return z * k * p['alpha'] ** (-1 / p['mu'])
 
-    def rhs(cons: float, gti: float, ft: float) -> float:
-        return 1 - (ft * cons) / (gti - cons)
 
-    def diff(c: float) -> float:
-        lhs_args = [c, z, k, p['alpha'], p['gamma'], p['interest']]
-        rhs(c, gt_ * income, ft_) - lhs(*lhs_args)
-
-    # Initial guess at the next options for
-    max_val = gt_ * income / (1+ft_)
-    x = [0, max_val / 2, max_val]
+def bisection_CES(z:float, gti:float, k:float, s_:float, p: dict, init:float=1e3):
+    """ Determine the level of consumption using the bisection method
+    
+    .. math:: \frac{2\gamma}{1-\alpha} c_t -  G_t z_t \left(c_t^{-\mu } z_t^{\mu }\right)^{-\frac{\mu +1}{\mu }} \left(\frac{c_t^{-\mu } z_t^{\mu }-\alpha  k_t^{-\mu }}{1-\alpha }\right)^{\frac{2}{\mu }+1} = 0
+    
+    
+    Parameters
+    ----------
+    z : float
+        Level of productivity
+    g : float
+        Consumption rate (% of income consumed)
+    k : float
+        Level of capital at t
+    p : dict
+        Parameters from simulation
+    precision : float, default: 1e-5
+        Precision of the bisection solution
+    
+    Returns
+    -------
+    c : float
+        level of consumption
+    """
+    
+    # Pre-compute constants
+    mu = p['mu']
+    lhs_1 = 2 * p['gamma'] / (1 - p['alpha'])
+    rhs_1 = g * z / ((1 - p['alpha']) ** (2 / mu + 1))
+    rhs_2 = p['alpha'] * k ** (-1 * mu)
+    
+    # Minimisation target for the bisection
+    def diff(c: float):
+        r = z / c
+        rhs = rhs_1 * (r ** (-1 - mu)) * ((r ** mu) - rhs_2) ** (2 / mu + 1)
+        return c * lhs_1 - rhs
+    
+    max_val = c_bound(z, k, p)
+    
+    # Adapt by precision to avoid asymptotic bounds
+    edge = precision * 1e-2
+    x = [edge, max_val / 2, max_val-edge]
     abs_lst = [abs(diff(i)) for i in x[:2]]
 
-    while min(abs_lst) >= err:
+    # Conditions to stop: difference too small OR too close to the bound
+    while all([min(abs_lst) >= precision, max_val - x[0] >= precision]):
         test = np.sign([diff(i) for i in x])
-
         if test[0] == test[1]:
             x = [x[1], (x[1] + x[2]) / 2, x[2]]
         elif test[1] == test[2]:
-            x = [x[0], (x[0] + x[1]) / 2, x[1]]
-
+            x = [x[0], (x[0] + x[1]) / 2, x[1]]     
+        
         abs_lst = [abs(diff(i)) for i in x[:2]]
 
     return x[np.argmin(abs_lst)]
 
 
-def bisection_CES(z: float, income: float, k: float, gt_: float, ft_: float,
-                  p: dict, err: float = 1e-5) -> float:
-    """ Bi-section method for the CES production function
-
+def step(t: float, x: np.ndarray, p: dict, err:float):
+    """Iteration of one step in the simulation
+    
     Parameters
     ----------
-    z   :    float
-    income  :   float
-    k   :   float
-    gt_     :   float
-    ft_     :   float
-    p   :   dict
-    err     :   float (default 1e-5)
-
+    t : float
+        Current timestep t
+    x : np.ndarray
+        state variables z, c, n, b, w, k, q, g, s, news, inc, xiz, xin
+    p : dict
+        Parameters from simulation
+        
     Returns
-    ----------
-    cons    :   float
-    """
-
-    def lhs(cons: float, z: float, k: float, alpha: float, gamma: float,
-            r: float, rho: float) -> float:
-        pt1 = 2 * gamma * (1+r) / ((z ** 2) * (1 - alpha) ** (2 / rho))
-        pt2 = cons ** 2
-        pt3 = (1 - alpha*(z * k / cons) ** rho) ** ((2 - rho) / rho)
-        return pt1 * pt2 * pt3
-
-    def rhs(cons: float, gti: float, ft: float) -> float:
-        return 1 - (ft * cons) / (gti - cons)
-
-    def diff(c: float) -> float:
-        lhs_args = [c, z, k, p['alpha'], p['gamma'], p['interest'], p['rho']]
-        rhs(c, gt_ * income, ft_) - lhs(*lhs_args)
-
-    # Initial guess at the next options
-    guess = np.min([gt_*income, k * z * (1 / p['alpha']) ** (-1 / p['rho'])])
-    x = [0, guess / 2, guess]
-    abs_lst = [abs(diff(i)) for i in x[:2]]
-
-    # Apply bi-section method
-    while min(abs_lst) >= err:
-        test = np.sign([diff(i) for i in x])
-
-        if test[0] == test[1]:
-            x = [x[1], (x[1] + x[2]) / 2, x[2]]
-        elif test[1] == test[2]:
-            x = [x[0], (x[0] + x[1]) / 2, x[1]]
-
-        abs_lst = [abs(diff(i)) for i in x[:2]]
-
-    return x[np.argmin(abs_lst)]
-
-
-def step(t: float, x_: np.ndarray, p: dict):
-    """ Iterate through one step of the economy
-
-    Parameters
-    ----------
-    t   :   float
-    x_  :   np.ndarray
-    p   :   dict
-
-    Returns
-    ----------
-    x   :   np.ndarray
+    -------
+    bound : float
+        Upper bound on consumption
     """
     # Starting variables
-    z_, c_, n_, b_, w_, k_, q_, gt_, ft_, news_, inc_, xiz_, xin_ = x_
-
+    z_, c_, n_, b_, w_, k_, q_, g_, s_,s0, news_, inc_, xiz_, xin_, crisis_ = x
+        
     # Random technology process
     rand = np.random.normal(0, p['sigmaZ'])
     xiz = p['etaZ'] * xiz_ + np.sqrt(1 - p['etaZ'] ** 2) * rand
     z = p['zbar'] * np.exp(xiz)
+    
+    # Observe "State of economy"
+    g = g_
+    s = .5*((p['s_max']-p['s_min'])*np.tanh(p['s_theta']*(s_ - s0)) + (p['s_max']+p['s_min']))
 
-    # Income and Investment
-    income = (w_ * n_ + b_ + q_ * k_) / (1 + p['inflation'])
-
-    # Capital Markets
-    k = (1 - p['depreciation']) * k_ + income * (1 - gt_)
-
-    # Household decision
-    c = bisection_CES(z, income, k, gt_, ft_, p)
-    n = (c ** 2) / (4 * k * (z ** 2))
-    b = (gt_ * income - c) * (1 + p['interest'])
-
-    # Firm decisions (CES)
-    temp = (p['alpha'] * k ** p['rho'] + (1 - p['alpha']) * n ** p['rho'])
-    temp = temp ** ((1 / p['rho']) - 1)
-    w = (1 - p['alpha']) * z * temp * (n ** (p['rho'] - 1))
-    q = p['alpha'] * z * temp * (k ** (p['rho'] - 1))
-
-    # News
+    # Determine Consumption
+    c = bisection(z, g, k_, p)
+    
+    # Working hours via market clearing
+    n = ((c / z) ** (-1 * p['mu']) - p['alpha'] * k_ ** (-1 * p['mu']))
+    n = (n / (1 - p['alpha'])) ** (-1 / p['mu'])
+    
+    # Firm observes desired working hours, sets the wage accordingly
+    rho = -1 * p['mu']
+    temp = (p['alpha'] * k_ ** rho + (1 - p['alpha']) * n ** rho) 
+    temp = temp ** ((1 / rho) - 1)
+    w = (1 - p['alpha']) * z * temp * (n ** (rho - 1))
+    
+    # Income
+    income = w * n + (b_  + q_ * k_) / (1 + p['inflation'])
+    #test = [income>0, w>0, n>0, k_>0, q_>0, b_>0]
+    #assert all(test), print("w:{:.2f} n:{:.2f} b:{:.2f} q:{:.2f} k:{:.2f}".format(w,n,b_,q_,k_))
+    
+    # Investment & Bonds
+    investment = income * (1 - g)
+    b = (1 + p['interest']) * s * investment
+    
+    # Capital & Risky return
+    k = (1 - p['depreciation']) * k_ + investment * (1 - s)
+    q = p['alpha'] * z * temp * (k ** (rho - 1))
+    
+    # Retain previous news formula out of interest
     xin = np.random.normal(0, p['sigmaN'])
     info = p['n_cons']*(c/c_ - 1)
-    temp = p['n_persistence'] * news_ + (1 - p['n_persistence']) * info + xin
-    news = np.tanh(p['n_theta'] * temp)
-
-    if t > 300 and t < 400:
-        if p['shock'] == -1:
-            news = -1
-        elif p['shock'] == 1:
-            news = 1
-
-    # Household modifiers
-    gt = 0.5 * (p['g_max'] + p['g_min'] - news * (p['g_max'] - p['g_min']))
-    ft = 0.5 * (p['f_max'] + p['f_min'] - news * (p['f_max'] - p['f_min']))
-
-    return z, c, n, b, w, k, q, gt, ft, news, income, xiz, xin
-
-
-def simulate(start: np.ndarray, p: dict, t_end: float = 1e3):
-    """ Function to simulate the economy
-
-    Parameters
-    ----------
-    start   :   np.ndarray
-    p   :   dict
-    t_end   :   float (default 1e3)
-
-    Returns
-    ----------
-    df  :   pd.DataFrame
-    """
-    x = np.empty((int(t_end), len(start)))
-    x[0, :] = start
-    for t in range(1, int(t_end)):
-        x[t, :] = step(t, x[t - 1, :], p)
-    cols = ['z', 'c', 'n', 'b', 'w', 'k', 'q', 'gt',
-            'ft', 'news', 'income', 'xiz', 'xin']
-    df = pd.DataFrame(x, columns=cols)
-    df.loc[:, 'inv'] = 100*(1-df.loc[:, 'gt'])
-    df.loc[:, 'bc'] = df.b / df.c
-    return df
+    step_news = p['n_persistence'] * news_ + (1 - p['n_persistence']) * info + xin
+    news = np.tanh(p['n_theta'] * step_news)
+    crisis  = .5*(1.1+np.sign(n-k))
+    s0 = (c/c_ - 1)
+    
+    return z, c, n, b, w, k, q, g, s,s0, news, income, xiz, xin, crisis
