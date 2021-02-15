@@ -185,7 +185,7 @@ def step(t: float, x: np.ndarray, p: dict, err:float):
 
     # Firm observes desired working hours, sets the wage accordingly
     rho = -1 * p['mu']
-    temp = (p['alpha'] * k_ ** rho + (1 - p['alpha']) * n ** rho) 
+    temp = (p['alpha'] * k_ ** rho + (1 - p['alpha']) * n ** rho)
     temp = temp ** ((1 / rho) - 1)
     w = (1 - p['alpha']) * z * temp * (n ** (rho - 1))
 
@@ -288,22 +288,35 @@ def sim_param_effect(param, param_range, gs_num, T, err, macro_vars,
     return results
 
 
-def plot_steady_state_effects(res, param, save=None, sup_tit=None):
+def find_cbar_range(dfs, top_cutoff: float = 0.90):
+    vmin = min([df.min().min() for df in dfs])
+    vmax = max([df.quantile(top_cutoff).quantile(top_cutoff) for df in dfs])
+    return vmin, vmax
+
+
+def plot_steady_state_effects(res, param, save=None, sup_tit=None,
+                              n_lin: int = 20, top_cutoff: float = 0.9,
+                              q_cutoff: float=0.75, cmap: str = 'hot'):
     keys = list(res.keys())
     nrow, ncol = len(res[keys[0]].keys()), len(keys)
     fig, ax = plt.subplots(nrows=nrow, ncols=ncol)
     for i, var in enumerate(res[keys[0]].keys()):
         if len(keys) == 1:
             x = res[keys[0]][var]
-            q = ax[i].contourf(x.columns, x.index, x)
+            q = ax[i].contourf(x.columns, x.index, x, levels=n_lin)
             _ = plt.colorbar(q, ax=ax[i])
             ax[i].set_title("{}".format(var))
             ax[i].set_xlabel('s')
             ax[i].set_ylabel('g')
         else:
+            dfs = [res[val][var] for val in keys]
+            vmin, vmax = find_cbar_range(dfs, top_cutoff)
+            if var == 'q':
+                vmin, vmax = find_cbar_range(dfs, q_cutoff)
+            kwargs = dict(levels=np.linspace(vmin, vmax, n_lin), cmap=cmap)
             for ii, val in enumerate(keys):
                 x = res[val][var]
-                q = ax[i, ii].contourf(x.columns, x.index, x)
+                q = ax[i, ii].contourf(x.columns, x.index, x, **kwargs)
                 _ = plt.colorbar(q, ax=ax[i, ii])
                 ax[i, ii].set_title("{} {}={:.1e}".format(var, param, val))
                 ax[i, ii].set_xlabel('s')
@@ -311,9 +324,9 @@ def plot_steady_state_effects(res, param, save=None, sup_tit=None):
 
     if sup_tit is not None:
         fig.suptitle(sup_tit, fontsize=16)
-    
+
     fig.set_size_inches(4*ncol, 4*nrow)
     fig.tight_layout(rect=[0, 0.03, 1, 0.97])
-    
+
     if save is not None:
         plt.savefig(save, bbox_inches='tight', format='pdf')
