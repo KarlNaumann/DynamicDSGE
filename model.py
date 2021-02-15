@@ -151,7 +151,7 @@ def default_step(t: float, x: np.ndarray, p: dict, err: float):
     # Signals to the household investor
     info_c = c / c_ - 1
     info_r = (q - p['interest']) / (q + p['interest'])
-    news = p['s0'] * info_c + (1 - p['s0']) * info_r
+    news = p['sentiment'] * info_c + (1 - p['sentiment']) * info_r
 
     return z, c, n, b, w, k, q, g, s, news, income, xiz, 0
 
