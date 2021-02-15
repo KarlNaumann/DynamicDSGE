@@ -6,10 +6,12 @@ __author__ = "Karl Naumann & Federico Morelli"
 __version__ = "0.1.0"
 __license__ = "MIT"
 
+from itertools import product
+
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
-from itertools import product
+
 
 # GRAPHING FUNCTIONS
 
@@ -64,9 +66,7 @@ def simulation_graph(groups: dict, size: tuple = (3, 10)):
     return axs
 
 
-# SIMULATION FUNCTIONS
-
-
+# STEADY STATE SIMULATIONS
 def c_bound(z: float, k: float, p: dict):
     """Upper bound on the amount that can be consumed
 
@@ -131,7 +131,7 @@ def bisection(z: float, g: float, k: float, p: dict, precision: float = 1e-7):
 
     # Adapt by precision to avoid asymptotic bounds
     edge = precision * 1e-2
-    x = [edge, max_val / 2, max_val-edge]
+    x = [edge, max_val / 2, max_val - edge]
     abs_lst = [abs(diff(i)) for i in x[:2]]
 
     # Conditions to stop: difference too small OR too close to the bound
@@ -147,7 +147,7 @@ def bisection(z: float, g: float, k: float, p: dict, precision: float = 1e-7):
     return x[np.argmin(abs_lst)]
 
 
-def step(t: float, x: np.ndarray, p: dict, err:float):
+def step(t: float, x: np.ndarray, p: dict, err: float):
     """Iteration of one step in the simulation
 
     Parameters
@@ -158,6 +158,8 @@ def step(t: float, x: np.ndarray, p: dict, err:float):
         state variables z, c, n, b, w, k, q, g, s, news, inc, xiz, xin
     p : dict
         Parameters from simulation
+    err : float
+        precision of the bisection method
 
     Returns
     -------
@@ -177,7 +179,7 @@ def step(t: float, x: np.ndarray, p: dict, err:float):
     s = s_
 
     # Determine Consumption
-    c = bisection(z, g, k_, p)
+    c = bisection(z, g, k_, p, precision=err)
 
     # Working hours via market clearing
     n = ((c / z) ** (-1 * p['mu']) - p['alpha'] * k_ ** (-1 * p['mu']))
@@ -202,14 +204,13 @@ def step(t: float, x: np.ndarray, p: dict, err:float):
 
     # Retain previous news formula out of interest
     xin = np.random.normal(0, p['sigmaN'])
-    info = p['n_cons']*(c/c_ - 1)
-    step_news = p['n_persistence'] * news_ + (1 - p['n_persistence']) * info + xin
+    info = p['n_cons'] * (c / c_ - 1)
+    step_news = p['n_persistence'] * news_ + (
+            1 - p['n_persistence']) * info + xin
     news = np.tanh(p['n_theta'] * step_news)
 
     return z, c, n, b, w, k, q, g, s, news, income, xiz, xin
 
-
-# STEADY STATE SIMULATIONS
 
 def steady_state_simulate(start: np.ndarray, p: dict, t_max: float = 2e3,
                           err: float = 1e-4):
@@ -234,12 +235,13 @@ def steady_state_simulate(start: np.ndarray, p: dict, t_max: float = 2e3,
         new = step(t, prior, p, 1e-5)
         t += 1
         cond = all([
-            abs(new[5]-prior[5]) > err,
+            abs(new[5] - prior[5]) > err,
             any(np.isnan(new)) == False,
             t <= t_max])
         prior = new
 
-    cols = ['z', 'c', 'n', 'b', 'w', 'k', 'q', 'g', 's', 'news', 'income', 'xiz', 'xin']
+    cols = ['z', 'c', 'n', 'b', 'w', 'k', 'q', 'g', 's', 'news', 'income',
+            'xiz', 'xin']
     cols += ['utility']
     u = np.array([np.log(new[1]) - p['gamma'] * (new[2] ** 2)])
     new = np.hstack([new, u])
@@ -256,11 +258,11 @@ def start_array(g, s, start_dict):
 
 
 def set_gs_range(gs_num):
-    return np.linspace(1e-3, 1-1e-3, gs_num), np.linspace(1e-3, 1-1e-3, gs_num)
+    return np.linspace(1e-3, 1 - 1e-3, gs_num), np.linspace(1e-3, 1 - 1e-3,
+                                                            gs_num)
 
 
 def gs_steady_state(g_list, s_list, params, macro_vars, start_dict, T, err):
-
     empty_frame = pd.DataFrame(index=g_list, columns=s_list, dtype=float)
     res = {k: empty_frame.copy(deep=True) for k in macro_vars}
     for g, s in product(g_list, s_list):
@@ -273,7 +275,6 @@ def gs_steady_state(g_list, s_list, params, macro_vars, start_dict, T, err):
 
 def sim_param_effect(param, param_range, gs_num, T, err, macro_vars,
                      params, start_dict):
-
     g_list, s_list = set_gs_range(gs_num)
 
     # Analysis of results
@@ -296,7 +297,7 @@ def find_cbar_range(dfs, top_cutoff: float = 0.90):
 
 def plot_steady_state_effects(res, param, save=None, sup_tit=None,
                               n_lin: int = 20, top_cutoff: float = 0.9,
-                              q_cutoff: float=0.75, cmap: str = 'hot'):
+                              q_cutoff: float = 0.75, cmap: str = 'hot'):
     keys = list(res.keys())
     nrow, ncol = len(res[keys[0]].keys()), len(keys)
     fig, ax = plt.subplots(nrows=nrow, ncols=ncol)
@@ -325,7 +326,7 @@ def plot_steady_state_effects(res, param, save=None, sup_tit=None,
     if sup_tit is not None:
         fig.suptitle(sup_tit, fontsize=16)
 
-    fig.set_size_inches(4*ncol, 4*nrow)
+    fig.set_size_inches(4 * ncol, 4 * nrow)
     fig.tight_layout(rect=[0, 0.03, 1, 0.97])
 
     if save is not None:
