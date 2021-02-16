@@ -46,7 +46,7 @@ def timeseries(ax, data, log: bool = True, title: str = ''):
         ax.set_title(title)
 
 
-def simulation_graph(groups: dict, size: tuple = (3, 10)):
+def simulation_graph(groups: dict, size: tuple = (3, 10), save=''):
     """ Plot the given time series in groups
     Parameters
     ----------
@@ -63,6 +63,8 @@ def simulation_graph(groups: dict, size: tuple = (3, 10)):
         axs[k] = ax[i]
     plt.tight_layout()
     plt.show(block=False)
+    if save != '':
+        plt.savefig(save, bbox_inches='tight', format='pdf')
     return axs
 
 
