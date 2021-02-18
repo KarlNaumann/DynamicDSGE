@@ -11,62 +11,7 @@ from itertools import product
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
-
-
-# GRAPHING FUNCTIONS
-
-
-def timeseries(ax, data, log: bool = True, title: str = ''):
-    """ Function to graph a timeseries on a given axis
-    Parameters
-    ----------
-    ax  :   matplotlib axes
-    data  :   pd.DataFrame
-    log     :   bool
-    title   :   str
-    """
-    if isinstance(data, pd.Series):
-        data = pd.DataFrame(data)
-
-    for c in data.columns:
-        ax.plot(data.loc[:, c], label=c)
-    if data.shape[1] > 1:
-        ax.legend()
-    try:
-        t = ' '.join(data.columns)
-    except AttributeError:
-        t = ''
-
-    if log:
-        ax.set_yscale('log')
-        t = 'log ' + t
-    if title == '':
-        ax.set_title(t)
-    else:
-        ax.set_title(title)
-
-
-def simulation_graph(groups: dict, size: tuple = (3, 10), save=''):
-    """ Plot the given time series in groups
-    Parameters
-    ----------
-    groups  :   dict
-    Returns
-    --------
-    axs     :   dict
-    """
-    fig, ax = plt.subplots(ncols=1, nrows=len(list(groups.keys())))
-    fig.set_size_inches(size)
-    axs = {}
-    for i, k in enumerate(groups.keys()):
-        timeseries(ax[i], *groups[k], k)
-        axs[k] = ax[i]
-    plt.tight_layout()
-    plt.show(block=False)
-    if save != '':
-        plt.savefig(save, bbox_inches='tight', format='pdf')
-    return axs
-
+from matplotlib.ticker import FormatStrFormatter
 
 # STEADY STATE SIMULATIONS
 def c_bound(z: float, k: float, p: dict):
@@ -214,8 +159,7 @@ def step(t: float, x: np.ndarray, p: dict, err: float):
     return z, c, n, b, w, k, q, g, s, news, income, xiz, xin
 
 
-def steady_state_simulate(start: np.ndarray, p: dict, t_max: float = 2e3,
-                          err: float = 1e-4):
+def steady_state_simulate(start: np.ndarray, p: dict, t_max: float = 2e3, err: float = 1e-4):
     """ Complete a t_end period simulation of the whole system
 
     Parameters
@@ -260,8 +204,9 @@ def start_array(g, s, start_dict):
 
 
 def set_gs_range(gs_num):
-    return np.linspace(1e-3, 1 - 1e-3, gs_num), np.linspace(1e-3, 1 - 1e-3,
-                                                            gs_num)
+    g = np.linspace(1e-3, 1 - 1e-3, gs_num)
+    s = np.linspace(1e-3, 1 - 1e-3, gs_num)
+    return g, s
 
 
 def gs_steady_state(g_list, s_list, params, macro_vars, start_dict, T, err):
@@ -299,10 +244,13 @@ def find_cbar_range(dfs, top_cutoff: float = 0.90):
 
 def plot_steady_state_effects(res, param, save=None, sup_tit=None,
                               n_lin: int = 20, top_cutoff: float = 0.9,
-                              q_cutoff: float = 0.75, cmap: str = 'hot'):
+                              q_cutoff: float = 0.75, cmap: str = 'plasma'):
+    
     keys = list(res.keys())
     nrow, ncol = len(res[keys[0]].keys()), len(keys)
+    
     fig, ax = plt.subplots(nrows=nrow, ncols=ncol)
+    
     for i, var in enumerate(res[keys[0]].keys()):
         if len(keys) == 1:
             x = res[keys[0]][var]
@@ -320,7 +268,12 @@ def plot_steady_state_effects(res, param, save=None, sup_tit=None,
             for ii, val in enumerate(keys):
                 x = res[val][var]
                 q = ax[i, ii].contourf(x.columns, x.index, x, **kwargs)
-                _ = plt.colorbar(q, ax=ax[i, ii])
+                
+                if ii == ncol - 1:
+                    cbar = plt.colorbar(q, ax=ax[i, ii])
+                    form = FormatStrFormatter('%0.1f')
+                    cbar.ax.yaxis.set_major_formatter(form)
+
                 ax[i, ii].set_title("{} {}={:.1e}".format(var, param, val))
                 ax[i, ii].set_xlabel('s')
                 ax[i, ii].set_ylabel('g')
