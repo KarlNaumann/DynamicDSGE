@@ -6,6 +6,10 @@ __author__ = "Karl Naumann & Federico Morelli"
 __version__ = "0.1.0"
 __license__ = "MIT"
 
+from matplotlib import pyplot as plt
+import pandas as pd
+
+
 
 def timeseries(ax, data, log: bool = True, title: str = ''):
     """ Function to graph a timeseries on a given axis

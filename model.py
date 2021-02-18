@@ -112,7 +112,7 @@ def default_step(t: float, x: np.ndarray, p: dict, err: float):
         Upper bound on consumption
     """
     # Starting variables
-    z_, c_, n_, b_, w_, k_, q_, g_, s_, news_, inc_, xiz_, xin_ = x
+    z_, c_, n_, b_, w_, k_, k__, q_, g_, s_, news_, _, xiz_, _ = x
 
     # Random technology process
     rand = np.random.normal(0, p['sigmaZ'])
@@ -121,24 +121,25 @@ def default_step(t: float, x: np.ndarray, p: dict, err: float):
 
     # Observe "State of economy"
     g = g_
-    signal = np.tanh(p['s_theta'] * (s_ - news_))
+    signal = np.tanh(p['s_theta'] * (s_ - p['news_spread'] * news_))
     s = 0.5 * ((p['s_max'] - p['s_min']) * signal + p['s_max'] + p['s_min'])
 
     # Determine Consumption
     c = bisection(z, g, k_, p, precision=err)
 
     # Working hours via market clearing
-    n = ((c / z) ** (-1 * p['mu']) - p['alpha'] * k_ ** (-1 * p['mu']))
+    n = (c / z) ** (-1 * p['mu']) - p['alpha'] * k_ ** (-1 * p['mu'])
     n = (n / (1 - p['alpha'])) ** (-1 / p['mu'])
 
     # Firm observes desired working hours, sets the wage accordingly
     rho = -1 * p['mu']
-    temp = (p['alpha'] * k_ ** rho + (1 - p['alpha']) * n ** rho)
+    temp = p['alpha'] * k_ ** rho + (1 - p['alpha']) * n ** rho
     temp = temp ** ((1 / rho) - 1)
     w = (1 - p['alpha']) * z * temp * (n ** (rho - 1))
 
     # Income
-    income = w * n + (b_ + q_ * k_) / (1 + p['inflation'])
+    income = w * n + (b_ + q_ * k__) / (1 + p['inflation'])
+    cash = g * income - c
 
     # Investment & Bonds
     investment = income * (1 - g)
@@ -149,20 +150,85 @@ def default_step(t: float, x: np.ndarray, p: dict, err: float):
     q = p['alpha'] * z * temp * (k ** (rho - 1))
 
     # Signals to the household investor
-    info_c = c / c_ - 1
-    info_r = (q - p['interest']) / (q + p['interest'])
-    news = p['sentiment'] * info_c + (1 - p['sentiment']) * info_r
+    theta_c = (p['s_interval'] * c_) ** -1 
+    info_c = np.tanh(theta_c * (c - c_))
+    theta_r = (p['interest'] * p['s_interval']) ** -1
+    info_r = np.tanh(theta_r * (q - p['interest']))
+    news = p['s_c_weight'] * info_c + (1 - p['s_c_weight']) * info_r
 
-    return z, c, n, b, w, k, q, g, s, news, income, xiz, 0
+    return z, c, n, b, w, k, k_, q, g, s, news, income, xiz, cash
 
 
-def simulate(start: np.ndarray, p: dict, step_func=default_step, t_end: float = 1e3,
-             err: float = 1e-4):
+def default_params():
+    """ Return the default parameters for the dynamic DSGE model 
+    
+    Returns
+    -------
+    params : dict
+    """
+    return {
+        # Technology parameters
+        'etaZ': 0.2, 'sigmaZ': 0.4, 'zbar': 1.0,
+        # Economic parameters
+        'inflation': 0.01, 'interest': 0.01, 'depreciation': 0.01,
+        # Sentiment Parameters
+        's_min': 1e-4, 's_max': 1-1e-4,'s_theta':5,
+        # Signal Parameters
+        's_c_weight':.3, 's_interval':.1, 'news_spread':.7,
+        # Household and Production parameters
+        'gamma': 1.0, 'alpha': 0.33, 'mu': 8.32}
+
+
+def gen_params(**kwargs):
+    """ Generate parameters leaving the rest as defaults. 
+    
+    Parameters
+    ----------
+    name, value pairs for desired parameter changes
+
+    Returns
+    -------
+    parameters : dictionary of parameters
+    """
+    params = default_params()
+    for arg, val in kwargs.items():
+        assert arg in params.keys(), "{} is invalid".format(arg)
+        params[arg] = val
+    return params
+
+
+def default_start():
+    return dict(z=1.0, c=1.0, n=1.0, b=1.0, 
+                w=1.0, k=1.1, k_=0.0, q=0.0, 
+                g=0.7, s=0.5, news=0.0, 
+                income=1.0, xiz=0.0, cash=0.0)
+
+
+def gen_start(**kwargs):
+    """ Generate parameters leaving the rest as defaults. 
+    
+    Parameters
+    ----------
+    name, value pairs for desired parameter changes
+
+    Returns
+    -------
+    parameters : dictionary of parameters
+    """
+    start = default_start()
+    for arg, val in kwargs.items():
+        assert arg in start.keys(), "{} is invalid".format(arg)
+        start[arg] = val
+    return start
+
+
+def simulate(start: dict=None, p: dict=None, step_func=default_step, 
+             t_end: float = 1e3, err: float = 1e-4):
     """ Complete a t_end period simulation of the whole system
 
     Parameters
     ----------
-    start : np.ndarray
+    start : dict
         starting variables z, c, n, b, w, k, q, g, s, news, inc, xiz, xin
     p : dict
         Parameters from simulation
@@ -178,13 +244,17 @@ def simulate(start: np.ndarray, p: dict, step_func=default_step, t_end: float = 
     df : pd.DataFrame
         timeseries of the simulation results
     """
+
+    p = p if p is not None else default_params()
+    start = start if start is not None else default_start()
+
+    init = [v for _, v in start.items()]
+
     x = np.empty((int(t_end), len(start)))
-    x[0, :] = start
+    x[0, :] = init
     for t in range(1, int(t_end)):
         x[t, :] = step_func(t, x[t - 1, :], p, err)
         if any([x[t, 1] < err, x[t, 2] < err, x[t, 5] < err]):  # c, n, k
             break
-    x = x[:t + 10, :]
-    cols = ['z', 'c', 'n', 'b', 'w', 'k', 'q', 'g', 's', 'news', 'income',
-            'xiz', 'xin']
-    return pd.DataFrame(x, columns=cols)
+    x = x[:t+10, :]
+    return pd.DataFrame(x, columns=start.keys())
