@@ -9,9 +9,7 @@ __license__ = "MIT"
 import pandas as pd
 import numpy as np
 
-
 # SIMULATION FUNCTIONS
-
 def c_bound(z: float, k: float, p: dict):
     """Upper bound on the amount that can be consumed
 
@@ -147,13 +145,17 @@ def default_step(t: float, x: np.ndarray, p: dict, err: float):
 
     # Capital & Risky return
     k = (1 - p['depreciation']) * k_ + investment * (1 - s)
-    q = p['alpha'] * z * temp * (k ** (rho - 1))
+    q = p['alpha'] * z * temp * (k_ ** (rho - 1))
 
     # Signals to the household investor
-    theta_c = (p['s_interval'] * c_) ** -1 
-    info_c = np.tanh(theta_c * (c - c_))
-    theta_r = (p['interest'] * p['s_interval']) ** -1
-    info_r = np.tanh(theta_r * (q - p['interest']))
+    #theta_c = (p['s_interval'] * c_) ** -1 
+    #info_c = np.tanh(theta_c * (c - c_))
+    #theta_r = (p['interest'] * p['s_interval']) ** -1
+    #info_r = np.tanh(theta_r * (q - p['interest']))
+    
+    info_c = c / c_ - 1
+    #info_c = (c - c_) / (c + c_)
+    info_r = (q - p['interest']) / (q + p['interest'])
     news = p['s_c_weight'] * info_c + (1 - p['s_c_weight']) * info_r
 
     return z, c, n, b, w, k, k_, q, g, s, news, income, xiz, cash
@@ -168,15 +170,15 @@ def default_params():
     """
     return {
         # Technology parameters
-        'etaZ': 0.2, 'sigmaZ': 0.4, 'zbar': 1.0,
+        'etaZ': 0.2, 'sigmaZ': 0.2, 'zbar': 1.0,
         # Economic parameters
         'inflation': 0.01, 'interest': 0.01, 'depreciation': 0.01,
         # Sentiment Parameters
-        's_min': 1e-4, 's_max': 1-1e-4,'s_theta':5,
+        's_min': 1e-4, 's_max': 1-1e-4,'s_theta':5.0,
         # Signal Parameters
-        's_c_weight':.3, 's_interval':.1, 'news_spread':.7,
+        's_c_weight':.9, 's_interval':.1, 'news_spread':.7,
         # Household and Production parameters
-        'gamma': 1.0, 'alpha': 0.33, 'mu': 8.32}
+        'gamma': 1.0, 'alpha': 0.33, 'mu': 12.32}
 
 
 def gen_params(**kwargs):
@@ -200,7 +202,7 @@ def gen_params(**kwargs):
 def default_start():
     return dict(z=1.0, c=1.0, n=1.0, b=1.0, 
                 w=1.0, k=1.1, k_=0.0, q=0.0, 
-                g=0.7, s=0.5, news=0.0, 
+                g=0.7, s=0.5, news=1.0, 
                 income=1.0, xiz=0.0, cash=0.0)
 
 
@@ -232,7 +234,7 @@ def simulate(start: dict=None, p: dict=None, step_func=default_step,
         starting variables z, c, n, b, w, k, q, g, s, news, inc, xiz, xin
     p : dict
         Parameters from simulation
-    setp_func   :   function
+    setp_func   :   functionnews_spread
         Function with which to do the simulation
     t_end : float
         Duration of the simulation

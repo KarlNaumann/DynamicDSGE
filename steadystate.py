@@ -34,7 +34,7 @@ def c_bound(z: float, k: float, p: dict):
     bound : float
         Upper bound on consumption
     """
-    return z * k * p['alpha'] ** (-1 / p['mu'])
+    return z * k * p['alpha'] ** (-1.0 / p['mu'])
 
 
 def bisection(z: float, g: float, k: float, p: dict, precision: float = 1e-7):
@@ -64,21 +64,21 @@ def bisection(z: float, g: float, k: float, p: dict, precision: float = 1e-7):
 
     # Pre-compute constants
     mu = p['mu']
-    lhs_1 = 2 * p['gamma'] / (1 - p['alpha'])
-    rhs_1 = g * z / ((1 - p['alpha']) ** (2 / mu + 1))
-    rhs_2 = p['alpha'] * k ** (-1 * mu)
+    lhs_1 = 2.0 * p['gamma'] / (1.0 - p['alpha'])
+    rhs_1 = g * z / ((1.0 - p['alpha']) ** (2.0 / mu + 1.0))
+    rhs_2 = p['alpha'] * k ** (-1.0 * mu)
 
     # Minimisation target for the bisection
     def diff(c: float):
         r = z / c
-        rhs = rhs_1 * (r ** (-1 - mu)) * ((r ** mu) - rhs_2) ** (2 / mu + 1)
+        rhs = rhs_1 * (r ** (-1.0 - mu)) * ((r ** mu) - rhs_2) ** (2.0 / mu + 1.0)
         return c * lhs_1 - rhs
 
     max_val = c_bound(z, k, p)
 
     # Adapt by precision to avoid asymptotic bounds
     edge = precision * 1e-2
-    x = [edge, max_val / 2, max_val - edge]
+    x = [edge, max_val / 2.0, max_val - edge]
     abs_lst = [abs(diff(i)) for i in x[:2]]
 
     # Conditions to stop: difference too small OR too close to the bound
@@ -117,8 +117,8 @@ def step(t: float, x: np.ndarray, p: dict, err: float):
     z_, c_, n_, b_, w_, k_, q_, g_, s_, news_, inc_, xiz_, xin_ = x
 
     # Random technology process
-    rand = np.random.normal(0, p['sigmaZ'])
-    xiz = p['etaZ'] * xiz_ + np.sqrt(1 - p['etaZ'] ** 2) * rand
+    rand = np.random.normal(0.0, p['sigmaZ'])
+    xiz = p['etaZ'] * xiz_ + np.sqrt(1.0 - p['etaZ'] ** 2.0) * rand
     z = p['zbar'] * np.exp(xiz)
 
     # Observe "State of economy"
@@ -129,31 +129,31 @@ def step(t: float, x: np.ndarray, p: dict, err: float):
     c = bisection(z, g, k_, p, precision=err)
 
     # Working hours via market clearing
-    n = ((c / z) ** (-1 * p['mu']) - p['alpha'] * k_ ** (-1 * p['mu']))
-    n = (n / (1 - p['alpha'])) ** (-1 / p['mu'])
+    n = ((c / z) ** (-1.0 * p['mu']) - p['alpha'] * k_ ** (-1.0 * p['mu']))
+    n = (n / (1.0 - p['alpha'])) ** (-1.0 / p['mu'])
 
     # Firm observes desired working hours, sets the wage accordingly
-    rho = -1 * p['mu']
-    temp = (p['alpha'] * k_ ** rho + (1 - p['alpha']) * n ** rho)
-    temp = temp ** ((1 / rho) - 1)
-    w = (1 - p['alpha']) * z * temp * (n ** (rho - 1))
+    rho = -1.0 * p['mu']
+    temp = (p['alpha'] * k_ ** rho + (1.0 - p['alpha']) * n ** rho)
+    temp = temp ** ((1.0 / rho) - 1.0)
+    w = (1.0 - p['alpha']) * z * temp * (n ** (rho - 1.0))
 
     # Income
-    income = w * n + (b_ + q_ * k_) / (1 + p['inflation'])
+    income = w * n + (b_ + q_ * k_) / (1.0 + p['inflation'])
 
     # Investment & Bonds
-    investment = income * (1 - g)
-    b = (1 + p['interest']) * s * investment
+    investment = income * (1.0 - g)
+    b = (1.0 + p['interest']) * s * investment
 
     # Capital & Risky return
-    k = (1 - p['depreciation']) * k_ + investment * (1 - s)
-    q = p['alpha'] * z * temp * (k ** (rho - 1))
+    k = (1.0 - p['depreciation']) * k_ + investment * (1.0 - s)
+    q = p['alpha'] * z * temp * (k ** (rho - 1.0))
 
     # Retain previous news formula out of interest
-    xin = np.random.normal(0, p['sigmaN'])
-    info = p['n_cons'] * (c / c_ - 1)
+    xin = np.random.normal(0.0, p['sigmaN'])
+    info = p['n_cons'] * (c / c_ - 1.0)
     step_news = p['n_persistence'] * news_ + (
-            1 - p['n_persistence']) * info + xin
+            1.0 - p['n_persistence']) * info + xin
     news = np.tanh(p['n_theta'] * step_news)
 
     return z, c, n, b, w, k, q, g, s, news, income, xiz, xin
