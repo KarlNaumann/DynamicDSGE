@@ -256,7 +256,7 @@ def simulate(start: dict=None, p: dict=None, step_func=default_step,
     x[0, :] = init
     for t in range(1, int(t_end)):
         x[t, :] = step_func(t, x[t - 1, :], p, err)
-        if any([x[t, 1] < err, x[t, 2] < err, x[t, 5] < err]):  # c, n, k
-            break
-    x = x[:t+10, :]
+        #if any([x[t, 1] < err, x[t, 2] < err, x[t, 5] < err]):  # c, n, k
+        #    break
+    x = x[:t+1, :]
     return pd.DataFrame(x, columns=start.keys())
