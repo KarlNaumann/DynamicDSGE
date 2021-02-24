@@ -170,7 +170,7 @@ def default_params():
     """
     return {
         # Technology parameters
-        'etaZ': 0.2, 'sigmaZ': 0.2, 'zbar': 1.0,
+        'etaZ': 0.2, 'sigmaZ': 0.2, 'zbar': 10.0,
         # Economic parameters
         'inflation': 0.01, 'interest': 0.01, 'depreciation': 0.01,
         # Sentiment Parameters
