@@ -6,8 +6,9 @@ __author__ = "Karl Naumann & Federico Morelli"
 __version__ = "0.1.0"
 __license__ = "MIT"
 
-import pandas as pd
 import numpy as np
+import pandas as pd
+
 
 # SIMULATION FUNCTIONS
 def c_bound(z: float, k: float, p: dict):
@@ -90,7 +91,7 @@ def bisection(z: float, g: float, k: float, p: dict, precision: float = 1e-7):
     return x[np.argmin(abs_lst)]
 
 
-def default_step(t: float, x: np.ndarray, p: dict, err: float):
+def step(t: float, x: np.ndarray, p: dict, err: float):
     """Iteration of one step in the simulation
 
     Parameters
@@ -101,89 +102,111 @@ def default_step(t: float, x: np.ndarray, p: dict, err: float):
         state variables z, c, n, b, w, k, q, g, s, news, inc, xiz, xin
     p : dict
         Parameters from simulation
-    err : float
-        precision of the bisection method
 
     Returns
     -------
     bound : float
         Upper bound on consumption
     """
-    # Starting variables
-    z_, c_, n_, b_, w_, k_, k__, q_, g_, s_, news_, _, xiz_, _ = x
+    # Variables for the simulation
+    z_, xiz_, c_, n_, b_, w_, k_, m_, k__, q_, g_, s_, s0_, mu_, sig2_, news_, c0_, sharpe_ = x
 
     # Random technology process
-    rand = np.random.normal(0, p['sigmaZ'])
+    if p['steady_state']:
+        rand = np.random.normal(0, p['sigmaZ'])
+    else:
+        rand = np.random.normal(0, p['sigmaZ'])
     xiz = p['etaZ'] * xiz_ + np.sqrt(1 - p['etaZ'] ** 2) * rand
     z = p['zbar'] * np.exp(xiz)
 
-    # Observe "State of economy"
-    g = g_
-    signal = np.tanh(p['s_theta'] * (s_ - p['news_spread'] * news_))
-    s = 0.5 * ((p['s_max'] - p['s_min']) * signal + p['s_max'] + p['s_min'])
-
     # Determine Consumption
-    c = bisection(z, g, k_, p, precision=err)
+    c = bisection(z, g_, k_, p)
 
     # Working hours via market clearing
-    n = (c / z) ** (-1 * p['mu']) - p['alpha'] * k_ ** (-1 * p['mu'])
+    n = ((c / z) ** (-1 * p['mu']) - p['alpha'] * k_ ** (-1 * p['mu']))
     n = (n / (1 - p['alpha'])) ** (-1 / p['mu'])
 
     # Firm observes desired working hours, sets the wage accordingly
     rho = -1 * p['mu']
-    temp = p['alpha'] * k_ ** rho + (1 - p['alpha']) * n ** rho
+    temp = (p['alpha'] * k_ ** rho + (1 - p['alpha']) * n ** rho)
     temp = temp ** ((1 / rho) - 1)
     w = (1 - p['alpha']) * z * temp * (n ** (rho - 1))
 
     # Income
     income = w * n + (b_ + q_ * k__) / (1 + p['inflation'])
-    cash = g * income - c
+    m = g_ * income - c
 
     # Investment & Bonds
-    investment = income * (1 - g)
-    b = (1 + p['interest']) * s * investment
+    investment = income * (1 - g_)
+    b = (1 + p['interest']) * s_ * investment
 
     # Capital & Risky return
-    k = (1 - p['depreciation']) * k_ + investment * (1 - s)
-    q = p['alpha'] * z * temp * (k_ ** (rho - 1))
 
-    # Signals to the household investor
-    #theta_c = (p['s_interval'] * c_) ** -1 
-    #info_c = np.tanh(theta_c * (c - c_))
-    #theta_r = (p['interest'] * p['s_interval']) ** -1
-    #info_r = np.tanh(theta_r * (q - p['interest']))
-    
-    info_c = c / c_ - 1
-    #info_c = (c - c_) / (c + c_)
-    info_r = (q - p['interest']) / (q + p['interest'])
-    news = p['s_c_weight'] * info_c + (1 - p['s_c_weight']) * info_r
+    k = (1 - p['depreciation']) * k_ + investment * (1 - s_)
+    temp = (p['alpha'] * k ** rho + (1 - p['alpha']) * n ** rho)
+    temp = temp ** ((1 / rho) - 1)
+    q = p['alpha'] * z * temp * k ** (rho - 1)
 
-    return z, c, n, b, w, k, k_, q, g, s, news, income, xiz, cash
+    # Returns to the household's portfolio
+    # w_b = b_ / (b_ + k__)
+    # port_ret = w_b * p['interest'] + (1 - w_b) * q_
+
+    w_b = k_ / (b_ + k_)
+    port_ret = q_  # k_ / (b_+k_) * q_
+
+    # Expectations are based on EWMA (returns and volatility)
+
+    mu = p['memory_1'] * mu_ + (1 - p['memory_1']) * port_ret
+    sig2 = p['memory_1'] * sig2_ + (1 - p['memory_1']) * (port_ret - mu_) ** 2
+
+    sharpe = (p['interest'] - mu) / np.sqrt(sig2)
+
+    c0 = p['memory_2'] * c0_ + (1 - p['memory_2']) * ((c_ / c) - 1)
+
+    s0 = sharpe
+    news = p['ratio'] * s0 + (1 - p['ratio']) * (
+        c0)  # + np.random.uniform(-p['ex_news'],p['ex_news'])
+
+    # Risk-weighted excess returns are the signal
+    if p['steady_state']:
+        s0 = 1e9
+        # s0 large = good signal
+
+    # Decision on Spending and Investment Allocation
+    g = g_
+
+    financial_risk = np.random.beta(a=p['q_shock'], b=1)
+    q = q * financial_risk
+
+    s = 0.5 * ((p['s_max'] - p['s_min']) * np.tanh(p['s_theta'] * news) + p[
+        's_max'] + p['s_min'])
+
+    return z, xiz, c, n, b, w, k, m, k_, q, g, s, s0, mu, sig2, news, c0, sharpe
 
 
 def default_params():
-    """ Return the default parameters for the dynamic DSGE model 
-    
+    """ Return the default parameters for the dynamic DSGE model
+
     Returns
     -------
     params : dict
     """
     return {
-        # Technology parameters
-        'etaZ': 0.2, 'sigmaZ': 0.2, 'zbar': 10.0,
-        # Economic parameters
-        'inflation': 0.01, 'interest': 0.01, 'depreciation': 0.01,
-        # Sentiment Parameters
-        's_min': 1e-4, 's_max': 1-1e-4,'s_theta':5.0,
-        # Signal Parameters
-        's_c_weight':.9, 's_interval':.1, 'news_spread':.7,
-        # Household and Production parameters
-        'gamma': 1.0, 'alpha': 0.33, 'mu': 12.32}
+        # Noise Parameters
+        'etaZ': 0.5, 'zbar': 1.0,
+        # Empirical Parameters
+        'inflation': 0.0015, 'interest': 0.001, 'depreciation': 0.1,
+        # Quasi-fixed parameters
+        's_min': 0, 's_max': 1, 'memory_1': 0.98, 'memory_2': .5, 'gamma': 1.0,
+        'alpha': 0.33, 'mu': 7.32,
+        # Variable parameters
+        'sigmaZ': .8, 'q_shock': 10, 's_theta': 10, 'ratio': .5,
+        'steady_state': False}
 
 
 def gen_params(**kwargs):
-    """ Generate parameters leaving the rest as defaults. 
-    
+    """ Generate parameters leaving the rest as defaults.
+
     Parameters
     ----------
     name, value pairs for desired parameter changes
@@ -200,15 +223,14 @@ def gen_params(**kwargs):
 
 
 def default_start():
-    return dict(z=1.0, c=1.0, n=1.0, b=1.0, 
-                w=1.0, k=1.1, k_=0.0, q=0.0, 
-                g=0.7, s=0.5, news=1.0, 
-                income=1.0, xiz=0.0, cash=0.0)
+    return dict(z=1, xiz=1, c=1, n=1, b=1, w=1, k=.1, m=0.0, k_=0.0, q=0.02,
+                g=0.7, s=0.5, s0=0.0, mu=0.01, sig2=1e-5, news=0, c0=0,
+                income=0)
 
 
 def gen_start(**kwargs):
-    """ Generate parameters leaving the rest as defaults. 
-    
+    """ Generate parameters leaving the rest as defaults.
+
     Parameters
     ----------
     name, value pairs for desired parameter changes
@@ -224,7 +246,7 @@ def gen_start(**kwargs):
     return start
 
 
-def simulate(start: dict=None, p: dict=None, step_func=default_step, 
+def simulate(start: dict = None, p: dict = None, step_func=step,
              t_end: float = 1e3, err: float = 1e-4):
     """ Complete a t_end period simulation of the whole system
 
@@ -234,7 +256,7 @@ def simulate(start: dict=None, p: dict=None, step_func=default_step,
         starting variables z, c, n, b, w, k, q, g, s, news, inc, xiz, xin
     p : dict
         Parameters from simulation
-    setp_func   :   functionnews_spread
+    step_func   :   function for a single step in the model
         Function with which to do the simulation
     t_end : float
         Duration of the simulation
@@ -249,14 +271,10 @@ def simulate(start: dict=None, p: dict=None, step_func=default_step,
 
     p = p if p is not None else default_params()
     start = start if start is not None else default_start()
-
-    init = [v for _, v in start.items()]
-
     x = np.empty((int(t_end), len(start)))
-    x[0, :] = init
+
+    x[0, :] = [v for _, v in start.items()]
     for t in range(1, int(t_end)):
         x[t, :] = step_func(t, x[t - 1, :], p, err)
-        #if any([x[t, 1] < err, x[t, 2] < err, x[t, 5] < err]):  # c, n, k
-        #    break
-    x = x[:t+1, :]
-    return pd.DataFrame(x, columns=start.keys())
+
+    return pd.DataFrame(x[:t + 1, :], columns=start.keys())
