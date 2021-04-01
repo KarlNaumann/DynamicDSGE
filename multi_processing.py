@@ -72,18 +72,19 @@ if __name__ == "__main__":
     pickle.dump(v, file)
     file.close()
     print("Completed in {}".format(dt.timedelta(seconds=time.time()-start)))
-
+    """
     start = time.time()
     x = dict(q_shock=np.logspace(-1, 1.3, k), sigmaZ=np.linspace(0, 2, k))
     file = open('data_shock_v_sigmaZ.dict', 'wb')
     pickle.dump(main(x), file)
     file.close()
     print("Completed in {}".format(dt.timedelta(seconds=time.time() - start)))
+
     """
-    
     start = time.time()
     x = dict(sigmaZ=np.linspace(0, 2, k), ratio=np.linspace(0, 1, k))
-    file = open('data_shock_v_sigmaZ.dict', 'wb')
+    file = open('data_sigmaZ_v_ratio.dict', 'wb')
     pickle.dump(main(x), file)
     file.close()
     print("Completed in {}".format(dt.timedelta(seconds=time.time() - start)))
+    """
